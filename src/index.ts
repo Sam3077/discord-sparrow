@@ -2,8 +2,8 @@ import Discord from 'discord.js';
 import privateConfig from './private-config.json';
 import SearchClient from './clients/SearchClient';
 import resultsToMessage from './parsers/resultsToMessage';
-import { TorrentSearchResult } from 'thepiratebay';
-import { indexToEmoji } from './parsers/indexEmoji';
+import { exec } from 'child_process';
+import awaitVPNConnection from './awaitVPNConnection';
 
 const PAGE_SIZE = 5;
 const client = new Discord.Client();
@@ -28,7 +28,17 @@ client.on('ready', () => {
 client.on('message', async (message) => {
     if (message.channel.type !== "dm") return;
     if (message.author === client.user) return;
+    const vpnMessage = await message.channel.send("Activating VPN...");
+    exec('piactl connect');
 
+    try {
+        await awaitVPNConnection();
+    } catch(e) {
+        console.error(e);
+        message.reply("Failed to activate VPN");
+        return;
+    }
+    await vpnMessage.delete();
     console.log(`Searching for ${message.content}`);
     const searchClient = new SearchClient(message.content, PAGE_SIZE);
     const reply = await message.channel.send(`Searching for ${message.content}...`);
@@ -72,6 +82,8 @@ client.on('messageReactionAdd', async (reaction) => {
     if (reaction.emoji.name === '❌') {
         activeSearchClients.delete(reaction.message.id);
         await reaction.message.delete();
+        await reaction.message.channel.send("Deactivating VPN...");
+        exec("piactl disconnect");
         return;
     }
 
