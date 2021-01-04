@@ -1,4 +1,5 @@
 import { exec } from "child_process";
+import privateConfig from './private-config.json';
 
 function awaitStatus(statusTerm: string, maxRetries: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -39,4 +40,17 @@ export function awaitVPNConnection(): Promise<void> {
 
 export function awaitVPNDisconnection(): Promise<void> {
     return awaitStatus("Disconnected", 10);
+}
+
+export function startOpenVPN(): Promise<void> {
+    return new Promise<void>((resolve) => {
+        exec(`echo ${privateConfig.sudoPassword} | sudo -S openvpn --config /etc/openvpn/pia.conf`);
+        setTimeout(resolve, 1000);
+    })
+}
+export function killOpenVPN(): Promise<void> {
+    return new Promise<void>((resolve) => {
+        exec(`echo ${privateConfig.sudoPassword} | sudo -S killall openvpn`);
+        setTimeout(resolve, 1000);
+    })
 }

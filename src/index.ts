@@ -3,7 +3,7 @@ import privateConfig from './private-config.json';
 import SearchClient from './clients/SearchClient';
 import resultsToMessage from './parsers/resultsToMessage';
 import { exec } from 'child_process';
-import { awaitVPNConnection, awaitVPNDisconnection } from './awaitVPNConnection';
+import { startOpenVPN, killOpenVPN } from './awaitVPNConnection';
 import { emojiToIndex } from './parsers/indexEmoji';
 import WebTorrent from 'webtorrent';
 import torrentToMessage from './parsers/torrentToMessage';
@@ -20,11 +20,16 @@ client.on('ready', () => {
 client.on('message', async (message) => {
     if (message.channel.type !== "dm") return;
     if (message.author === client.user) return;
+    if (!privateConfig.autorizedUsers.includes(message.author.tag)) {
+        await message.reply("You don't appear to be an authorized user");
+        return;
+    }
+
     const vpnMessage = await message.channel.send("Activating VPN...");
-    exec('piactl connect');
+    // exec('piactl connect');
 
     try {
-        await awaitVPNConnection();
+        await startOpenVPN();
     } catch(e) {
         console.error(e);
         message.reply("Failed to activate VPN");
@@ -90,8 +95,8 @@ client.on('messageReactionAdd', async (reaction) => {
         await reaction.message.delete();
         if (torrentClient.torrents.length === 0) {
             await reaction.message.channel.send("Deactivating VPN and awaiting reconnection to Discord servers...");
-            exec("piactl disconnect");
-            await awaitVPNDisconnection();
+            // exec("piactl disconnect");
+            await killOpenVPN();
             await reaction.message.channel.send("Done!");
         }
         return;
@@ -102,7 +107,7 @@ client.on('messageReactionAdd', async (reaction) => {
     if (resultIndex > -1 && resultIndex < currentList.length) {
         activeSearchClients.delete(reaction.message.id);
         await reaction.message.delete();
-        torrentClient.add(currentList[resultIndex].magnetLink, { path: './downloaded-media/' }, async (torrent) => {
+        torrentClient.add(currentList[resultIndex].magnetLink, { path: '/media/orendrive/Media/Movies' }, async (torrent) => {
             const updateMessage = await reaction.message.channel.send(torrentToMessage(torrent));
             
             let lastUpdateFinished = true;
@@ -120,8 +125,8 @@ client.on('messageReactionAdd', async (reaction) => {
                 torrent.destroy({}, async () => {
                     if (torrentClient.torrents.length === 0) {
                         await reaction.message.channel.send("Deactivating VPN and awaiting reconnection to Discord servers...");
-                        exec("piactl disconnect");
-                        await awaitVPNDisconnection();
+                        // exec("piactl disconnect");
+                        await killOpenVPN();
                         await reaction.message.channel.send("Done!");
                     }
                 });
