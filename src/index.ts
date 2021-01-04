@@ -10,7 +10,7 @@ import torrentToMessage from './parsers/torrentToMessage';
 
 const PAGE_SIZE = 5;
 const client = new Discord.Client();
-const activeSearchClients = new Map<string, SearchClient>();
+const activeSearchClients = new Map<string, [SearchClient, string]>();
 const torrentClient = new WebTorrent();
 
 client.on('ready', () => {
@@ -25,6 +25,18 @@ client.on('message', async (message) => {
         return;
     }
 
+    const args = message.content.split(' ');
+    if (args.length < 2) {
+        await message.reply("Usage: [movie|show] [search term]");
+        return;
+    }
+    const type = args[0].toLowerCase();
+    if (type !== "movie" && type !== "show") {
+        await message.reply("Usage: [movie|show] [search term]");
+        return;
+    }
+    const searchTerm = args.slice(1).join(' ');
+
     const vpnMessage = await message.channel.send("Activating VPN...");
     // exec('piactl connect');
 
@@ -36,13 +48,13 @@ client.on('message', async (message) => {
         return;
     }
     await vpnMessage.delete();
-    console.log(`Searching for ${message.content}`);
-    const searchClient = new SearchClient(message.content, PAGE_SIZE);
-    const reply = await message.channel.send(`Searching for ${message.content}...`);
-    activeSearchClients.set(reply.id, searchClient);
+    console.log(`Searching for ${searchTerm}`);
+    const searchClient = new SearchClient(searchTerm, PAGE_SIZE);
+    const reply = await message.channel.send(`Searching for ${searchTerm}...`);
+    activeSearchClients.set(reply.id, [searchClient, type]);
 
     if (!(await searchClient.ready)) {
-        await reply.edit(":x: Couldn't find any results for " + message.content);
+        await reply.edit(":x: Couldn't find any results for " + searchTerm);
         return;
     }
     const searchResults = searchClient.current();
@@ -70,7 +82,8 @@ client.on('messageReactionAdd', async (reaction) => {
     }
 
     if (!activeSearchClients.has(reaction.message.id)) return;
-    const searchClient = activeSearchClients.get(reaction.message.id)!;
+    const params = activeSearchClients.get(reaction.message.id)!;
+    const searchClient = params[0];
 
     if (reaction.emoji.name === '➡️') {
         const next = await searchClient.next();
@@ -107,7 +120,8 @@ client.on('messageReactionAdd', async (reaction) => {
     if (resultIndex > -1 && resultIndex < currentList.length) {
         activeSearchClients.delete(reaction.message.id);
         await reaction.message.delete();
-        torrentClient.add(currentList[resultIndex].magnetLink, { path: '/media/orendrive/Media/Movies' }, async (torrent) => {
+        const finalDirectory = params[1] === 'movie' ? 'Movies' : 'TVShows'
+        torrentClient.add(currentList[resultIndex].magnetLink, { path: '/media/orendrive/Media/' + finalDirectory }, async (torrent) => {
             const updateMessage = await reaction.message.channel.send(torrentToMessage(torrent));
             
             let lastUpdateFinished = true;
