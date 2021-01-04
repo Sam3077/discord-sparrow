@@ -7,17 +7,19 @@ export default class SearchClient {
     private searchTerm: string;
     private hasNext: boolean;
     private pageSize: number;
+    public ready: Promise<boolean>;
 
     constructor(searchTerm: string, pageSize: number) {
         this.index = 0;
         this.results = [];
         this.searchTerm = searchTerm;
-        this.searchPage = -1;
+        this.searchPage = 0;
         this.hasNext = true;
         this.pageSize = pageSize;
         if (pageSize > 10) {
             throw "Page size must be less than 10"
         }
+        this.ready = this.doRequest();
     }
 
     private doRequest: () => Promise<boolean> = async () => {
@@ -29,22 +31,23 @@ export default class SearchClient {
         return result.length > 0;
     }
 
+    public current: () => PirateBay.TorrentSearchResult[] = () => {
+        const endIndex = Math.min(this.index + this.pageSize, this.results.length);
+        return this.results.slice(this.index, endIndex);;
+    }
+
     public next: () => Promise<PirateBay.TorrentSearchResult[]> = async () => {
-        let endIndex = this.index + this.pageSize;
+        let nextIndex = this.index + this.pageSize;
         // if we're out of results, try to grab some more
-        if (endIndex > this.results.length) {
+        if (nextIndex > this.results.length) {
             if (this.hasNext) {
                 this.searchPage++;
                 this.hasNext = await this.doRequest();
             } 
-            endIndex = Math.min(endIndex, this.results.length);
+            nextIndex = Math.min(nextIndex, this.results.length);
         }
-
-        const slice = this.results.slice(this.index, endIndex);
-        if (endIndex < this.results.length || this.hasNext) {
-            this.index = endIndex;
-        }
-        return slice;
+        this.index = nextIndex;
+        return this.current();
     }
 
     public previous: () => PirateBay.TorrentSearchResult[] = () => {
@@ -60,5 +63,5 @@ export default class SearchClient {
         }
         this.pageSize = newSize;
     }
-    public getDisplayPageNumber = () => Math.floor(this.index / this.pageSize);
+    public getDisplayPageNumber = () => Math.floor(this.index / this.pageSize) + 1;
 }

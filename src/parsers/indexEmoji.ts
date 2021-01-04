@@ -15,4 +15,20 @@ function indexToEmoji(index: number): string {
     return emojis[index];
 }
 
-export { indexToEmoji };
+function emojiToIndex(emoji: string): number {
+    const numberEmojis = [
+        '1️⃣',
+        '2️⃣',
+        '3️⃣',
+        '4️⃣',
+        '5️⃣',
+        '6️⃣',
+        '7️⃣',
+        '8️⃣',
+        '9️⃣',
+        '🔟'
+    ];
+    return numberEmojis.indexOf(emoji);;
+}
+
+export { indexToEmoji, emojiToIndex };

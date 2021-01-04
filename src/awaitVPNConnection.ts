@@ -1,6 +1,6 @@
 import { exec } from "child_process";
 
-export default function awaitVPNConnection(): Promise<void> {
+function awaitStatus(statusTerm: string, maxRetries: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         function checkConnected(interval?: NodeJS.Timeout) {
             exec('piactl get connectionstate', (err, stdout, stderr) => {
@@ -11,7 +11,7 @@ export default function awaitVPNConnection(): Promise<void> {
                     reject(err || stderr);
                     return;
                 }
-                if (stdout.trim() === 'Connected') {
+                if (stdout.trim() === statusTerm) {
                     if (interval) {
                         clearInterval(interval);
                     }
@@ -22,15 +22,21 @@ export default function awaitVPNConnection(): Promise<void> {
 
         checkConnected();
         let retryCount = 0;
-        const maxRetries = 10;
         const interval = setInterval(() => {
             checkConnected(interval);
             retryCount++;
             if (retryCount > maxRetries) {
                 clearInterval(interval);
                 exec('piactl disconnect');
-                reject(`Failed to connect after ${maxRetries} attempts`);
+                reject(`Failed to achieve status after ${maxRetries} attempts`);
             }
         }, 2000);
     });
+}
+export function awaitVPNConnection(): Promise<void> {
+    return awaitStatus("Connected", 10);
+}
+
+export function awaitVPNDisconnection(): Promise<void> {
+    return awaitStatus("Disconnected", 10);
 }

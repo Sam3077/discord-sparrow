@@ -3,23 +3,15 @@ import privateConfig from './private-config.json';
 import SearchClient from './clients/SearchClient';
 import resultsToMessage from './parsers/resultsToMessage';
 import { exec } from 'child_process';
-import awaitVPNConnection from './awaitVPNConnection';
+import { awaitVPNConnection, awaitVPNDisconnection } from './awaitVPNConnection';
+import { emojiToIndex } from './parsers/indexEmoji';
+import WebTorrent from 'webtorrent';
+import torrentToMessage from './parsers/torrentToMessage';
 
 const PAGE_SIZE = 5;
 const client = new Discord.Client();
 const activeSearchClients = new Map<string, SearchClient>();
-const NUMBER_EMOJIS = [
-    '1️⃣',
-    '2️⃣',
-    '3️⃣',
-    '4️⃣',
-    '5️⃣',
-    '6️⃣',
-    '7️⃣',
-    '8️⃣',
-    '9️⃣',
-    '🔟'
-];
+const torrentClient = new WebTorrent();
 
 client.on('ready', () => {
     console.log(`Logged in as ${client.user?.tag}!`);
@@ -44,9 +36,23 @@ client.on('message', async (message) => {
     const reply = await message.channel.send(`Searching for ${message.content}...`);
     activeSearchClients.set(reply.id, searchClient);
 
-    const searchResults = await searchClient.next();
+    if (!(await searchClient.ready)) {
+        await reply.edit(":x: Couldn't find any results for " + message.content);
+        return;
+    }
+    const searchResults = searchClient.current();
     await reply.edit(resultsToMessage(searchResults, searchClient.getDisplayPageNumber(), searchClient.getHasNext()));
 });
+
+client.on('disconnect', () => {
+    console.log('disconnected!');
+});
+
+client.on('error', console.error);
+client.on('warn', console.warn);
+client.on('invalidated', () => {
+    console.log('invalidated?')
+})
 
 client.on('messageReactionAdd', async (reaction) => {
     if (reaction.partial) {
@@ -82,17 +88,49 @@ client.on('messageReactionAdd', async (reaction) => {
     if (reaction.emoji.name === '❌') {
         activeSearchClients.delete(reaction.message.id);
         await reaction.message.delete();
-        await reaction.message.channel.send("Deactivating VPN...");
-        exec("piactl disconnect");
+        if (torrentClient.torrents.length === 0) {
+            await reaction.message.channel.send("Deactivating VPN and awaiting reconnection to Discord servers...");
+            exec("piactl disconnect");
+            await awaitVPNDisconnection();
+            await reaction.message.channel.send("Done!");
+        }
         return;
     }
 
-    if (NUMBER_EMOJIS.includes(reaction.emoji.name)) {
+    const resultIndex = emojiToIndex(reaction.emoji.name);
+    const currentList = searchClient.current();
+    if (resultIndex > -1 && resultIndex < currentList.length) {
         activeSearchClients.delete(reaction.message.id);
-        await Promise.all([
-            reaction.message.channel.send("Okay so now start the torrent... (TODO)"),
-            reaction.message.delete()
-        ]);
+        await reaction.message.delete();
+        torrentClient.add(currentList[resultIndex].magnetLink, { path: './downloaded-media/' }, async (torrent) => {
+            const updateMessage = await reaction.message.channel.send(torrentToMessage(torrent));
+            
+            let lastUpdateFinished = true;
+            async function updateListener() {
+                // only update every few seconds
+                if (lastUpdateFinished) {
+                    lastUpdateFinished = false;
+                    await updateMessage.edit(torrentToMessage(torrent));
+                    lastUpdateFinished = true;
+                }
+            }
+            torrent.on('done', async () => {
+                torrent.off('download', updateListener);
+                await reaction.message.channel.send(`Finished downloading to ${torrent.path}`);
+                torrent.destroy({}, async () => {
+                    if (torrentClient.torrents.length === 0) {
+                        await reaction.message.channel.send("Deactivating VPN and awaiting reconnection to Discord servers...");
+                        exec("piactl disconnect");
+                        await awaitVPNDisconnection();
+                        await reaction.message.channel.send("Done!");
+                    }
+                });
+                await updateMessage.delete();
+            });
+
+            torrent.on('download', updateListener);
+        })
     }
 });
+
 client.login(privateConfig.token);
